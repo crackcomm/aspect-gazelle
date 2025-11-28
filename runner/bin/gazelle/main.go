@@ -36,7 +36,31 @@ func init() {
 		if (os.Getenv("ORION_EXTENSIONS") != "" || os.Getenv("ORION_EXTENSIONS_DIR") != "") && !slices.Contains(envLanguages, runner.Orion) {
 			envLanguages = append(envLanguages, runner.Orion)
 		}
+
+		// Ensure proto runs before go, as go_proto_library generation depends on
+		// proto_library rules being generated first (via OtherGen in GenerateRules).
+		// See: https://github.com/aspect-build/aspect-gazelle/issues/131
+		envLanguages = ensureProtoBeforeGo(envLanguages)
 	}
+}
+
+// ensureProtoBeforeGo reorders languages so that proto comes before go if both are present.
+// This is necessary because the Go language's GenerateRules method looks at OtherGen
+// to find proto_library rules and generate go_proto_library rules for them.
+func ensureProtoBeforeGo(langs []string) []string {
+	goIdx := slices.Index(langs, runner.Go)
+	protoIdx := slices.Index(langs, runner.Protobuf)
+
+	// If both are present and go comes before proto, move proto before go
+	if goIdx >= 0 && protoIdx >= 0 && goIdx < protoIdx {
+		// Remove proto from its current position
+		result := slices.Delete(slices.Clone(langs), protoIdx, protoIdx+1)
+		// Insert proto before go
+		result = slices.Insert(result, goIdx, runner.Protobuf)
+		return result
+	}
+
+	return langs
 }
 
 /**
