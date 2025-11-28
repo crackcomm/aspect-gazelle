@@ -47,7 +47,7 @@ func init() {
 // Languages that depend on proto_library rules being generated first.
 // These languages look at OtherGen to find proto_library rules and generate
 // corresponding *_proto_library rules (go_proto_library, ts_proto_library, py_proto_library, etc.)
-var protoDependentLanguages = []string{
+var protoDependentLanguages = []runner.GazelleLanguage{
 	runner.Go,         // generates go_proto_library
 	runner.JavaScript, // generates ts_proto_library
 	runner.Python,     // generates py_proto_library
