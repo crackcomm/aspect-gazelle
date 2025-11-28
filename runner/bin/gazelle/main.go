@@ -37,26 +37,49 @@ func init() {
 			envLanguages = append(envLanguages, runner.Orion)
 		}
 
-		// Ensure proto runs before go, as go_proto_library generation depends on
-		// proto_library rules being generated first (via OtherGen in GenerateRules).
+		// Ensure proto runs before languages that depend on it for *_proto_library generation.
+		// These languages use OtherGen in GenerateRules to find proto_library rules.
 		// See: https://github.com/aspect-build/aspect-gazelle/issues/131
-		envLanguages = ensureProtoBeforeGo(envLanguages)
+		envLanguages = ensureProtoBeforeDependentLanguages(envLanguages)
 	}
 }
 
-// ensureProtoBeforeGo reorders languages so that proto comes before go if both are present.
-// This is necessary because the Go language's GenerateRules method looks at OtherGen
-// to find proto_library rules and generate go_proto_library rules for them.
-func ensureProtoBeforeGo(langs []string) []string {
-	goIdx := slices.Index(langs, runner.Go)
-	protoIdx := slices.Index(langs, runner.Protobuf)
+// Languages that depend on proto_library rules being generated first.
+// These languages look at OtherGen to find proto_library rules and generate
+// corresponding *_proto_library rules (go_proto_library, ts_proto_library, py_proto_library, etc.)
+var protoDependentLanguages = []string{
+	runner.Go,         // generates go_proto_library
+	runner.JavaScript, // generates ts_proto_library
+	runner.Python,     // generates py_proto_library
+}
 
-	// If both are present and go comes before proto, move proto before go
-	if goIdx >= 0 && protoIdx >= 0 && goIdx < protoIdx {
+// ensureProtoBeforeDependentLanguages reorders languages so that proto comes before
+// all languages that depend on it. This is necessary because these languages'
+// GenerateRules methods look at OtherGen to find proto_library rules.
+func ensureProtoBeforeDependentLanguages(langs []string) []string {
+	protoIdx := slices.Index(langs, runner.Protobuf)
+	if protoIdx < 0 {
+		// Proto not in the list, nothing to reorder
+		return langs
+	}
+
+	// Find the earliest index of any proto-dependent language that comes before proto
+	earliestDependentIdx := -1
+	for _, depLang := range protoDependentLanguages {
+		depIdx := slices.Index(langs, depLang)
+		if depIdx >= 0 && depIdx < protoIdx {
+			if earliestDependentIdx < 0 || depIdx < earliestDependentIdx {
+				earliestDependentIdx = depIdx
+			}
+		}
+	}
+
+	// If a dependent language comes before proto, move proto before it
+	if earliestDependentIdx >= 0 {
 		// Remove proto from its current position
 		result := slices.Delete(slices.Clone(langs), protoIdx, protoIdx+1)
-		// Insert proto before go
-		result = slices.Insert(result, goIdx, runner.Protobuf)
+		// Insert proto before the earliest dependent language
+		result = slices.Insert(result, earliestDependentIdx, runner.Protobuf)
 		return result
 	}
 
